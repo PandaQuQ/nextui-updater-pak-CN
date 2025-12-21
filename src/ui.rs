@@ -16,7 +16,9 @@ use crate::{Result, SDCARD_ROOT};
 const WINDOW_WIDTH: u32 = 1024;
 const WINDOW_HEIGHT: u32 = 768;
 const DPI_SCALE: f32 = 4.0;
-const FONTS: [&str; 2] = ["BPreplayBold-unhinted.otf", "chillroundm.ttf"];
+// MinUI font selection (from minuisettings.txt): font=0/1
+// On-device Chinese glyph support is provided by .system/res/font2.ttf.
+const FONTS: [&str; 2] = ["BPreplayBold-unhinted.otf", "font2.ttf"];
 
 #[allow(clippy::too_many_lines)]
 fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Response {
@@ -273,13 +275,24 @@ fn load_font() -> Result<FontDefinitions> {
 
     // Now load the font
     let mut path = PathBuf::from(SDCARD_ROOT);
-    path.push(format!(
-        ".system/res/{}",
-        FONTS[get_font_preference().unwrap_or(0)]
-    ));
-    println!("Loading font: {}", path.display());
+    let preference = get_font_preference().unwrap_or(0);
+    path.push(format!(".system/res/{}", FONTS[preference]));
+
     let mut font_bytes = vec![];
-    std::fs::File::open(path)?.read_to_end(&mut font_bytes)?;
+    match std::fs::File::open(&path).and_then(|mut f| f.read_to_end(&mut font_bytes)) {
+        Ok(_) => {
+            println!("Loading font: {}", path.display());
+        }
+        Err(e) => {
+            // Fallback for devices/skins where the preferred font file name differs.
+            println!("Failed to load font {}: {e:?}", path.display());
+            let mut fallback = PathBuf::from(SDCARD_ROOT);
+            fallback.push(".system/res/font2.ttf");
+            println!("Loading fallback font: {}", fallback.display());
+            font_bytes.clear();
+            std::fs::File::open(fallback)?.read_to_end(&mut font_bytes)?;
+        }
+    }
 
     let mut font_data: BTreeMap<String, Arc<FontData>> = BTreeMap::new();
 
