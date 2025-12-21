@@ -33,7 +33,7 @@ pub fn fetch_latest_release(repo: &str) -> Result<Release> {
         .send()?;
 
     if !response.status().is_success() {
-        return Err(format!("GitHub API request failed: {}", response.status()).into());
+        return Err(format!("GitHub API 请求失败：{}", response.status()).into());
     }
 
     Ok(response.json()?)
@@ -48,7 +48,7 @@ pub fn fetch_releases(repo: &str) -> Result<Vec<Release>> {
         .send()?;
 
     if !response.status().is_success() {
-        return Err(format!("GitHub API request failed: {}", response.status()).into());
+        return Err(format!("GitHub API 请求失败：{}", response.status()).into());
     }
 
     Ok(response.json()?)
@@ -63,7 +63,7 @@ pub fn fetch_tags(repo: &str) -> Result<Vec<Tag>> {
         .send()?;
 
     if !response.status().is_success() {
-        return Err(format!("GitHub API request failed: {}", response.status()).into());
+        return Err(format!("GitHub API 请求失败：{}", response.status()).into());
     }
 
     let tags: Vec<Tag> = response.json()?;
@@ -78,8 +78,8 @@ pub fn download<U: IntoUrl>(url: U, progress_cb: impl Fn(f32)) -> Result<Bytes> 
         .header("User-Agent", USER_AGENT);
 
     let mut response = request_builder.send()?;
-    println!("Status: {}", response.status());
-    println!("Headers: {:?}", response.headers());
+    println!("状态：{}", response.status());
+    println!("响应头：{:?}", response.headers());
 
     let total_size = response.content_length().unwrap_or(0);
 
@@ -102,7 +102,7 @@ pub fn download<U: IntoUrl>(url: U, progress_cb: impl Fn(f32)) -> Result<Bytes> 
         }
     }
 
-    println!("\nDownload complete!");
+    println!("\n下载完成！");
 
     Ok(bytes.into())
 }

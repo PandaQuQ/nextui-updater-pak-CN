@@ -38,10 +38,10 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
         ui.add_space(16.0);
         ui.label(
             RichText::new(
-                "WARNING\n\
-            Downgrades are not fully supported by NextUI!\n\
-            Some settings may be lost or unstable in old versions\n\
-            Manual editing of settings or files may be required",
+                "警告\n\
+            NextUI 并不完全支持降级！\n\
+            旧版本可能导致部分设置丢失或不稳定\n\
+            可能需要手动编辑设置或文件",
             )
             .size(10.0),
         );
@@ -54,12 +54,15 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
                     if app_state.release_selection_menu() {
                         // selection view
                         ui.label(
-                            RichText::new(format!("Selected Version:\n{selected_tag}\nThis version is currently already installed!")).size(10.0),
+                            RichText::new(format!(
+                                "已选择版本：\n{selected_tag}\n当前已安装此版本！"
+                            ))
+                            .size(10.0),
                         );
                     } else {
                         ui.label(
                             RichText::new(format!(
-                                "You currently have the latest available version:\n{selected_tag}"
+                                "当前已是最新版本：\n{selected_tag}"
                             ))
                             .size(10.0),
                         );
@@ -68,11 +71,11 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
                 } else if app_state.release_selection_menu() {
                     // selection view
                     ui.label(
-                        RichText::new(format!("Selected Version:\n{selected_tag}")).size(10.0),
+                        RichText::new(format!("已选择版本：\n{selected_tag}")).size(10.0),
                     );
                 } else {
                     ui.label(
-                        RichText::new(format!("New version available:\n{selected_tag}")).size(10.0),
+                        RichText::new(format!("发现新版本：\n{selected_tag}")).size(10.0),
                     );
                 }
             }
@@ -81,17 +84,17 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
                     // selection view
                     let selected_tag = hint_wrap_nextui_tag(app_state, &release.tag_name);
                     ui.label(
-                        RichText::new(format!("Selected Version:\n{selected_tag}")).size(10.0),
+                        RichText::new(format!("已选择版本：\n{selected_tag}")).size(10.0),
                     );
                 } else {
                     ui.label(
-                        RichText::new(format!("Latest version:\nNextUI {}", release.tag_name))
+                        RichText::new(format!("最新版本：\nNextUI {}", release.tag_name))
                             .size(10.0),
                     );
                 }
             }
             _ => {
-                ui.label(RichText::new("No release information available".to_string()).size(10.0));
+                ui.label(RichText::new("暂无版本信息".to_string()).size(10.0));
             }
         }
     }
@@ -99,27 +102,27 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
     ui.add_space(8.0);
 
     if app_state.release_selection_menu() & !app_state.release_selection_confirmed() {
-        let back_button = ui.button("Return");
+        let back_button = ui.button("返回");
         if back_button.clicked() {
             app_state.set_release_selection_menu(false);
         }
 
-        let confirm_button = ui.button("Accept Warning");
+        let confirm_button = ui.button("我已了解");
         if confirm_button.clicked() {
             app_state.set_release_selection_confirmed(true);
         }
 
         if back_button.has_focus() {
-            app_state.set_hint(Some("Return to Latest Version options".to_string()));
+            app_state.set_hint(Some("返回到最新版本选项".to_string()));
         } else if confirm_button.has_focus() {
-            app_state.set_hint(Some("Confirm warning and open update options".to_string()));
+            app_state.set_hint(Some("确认警告并打开更新选项".to_string()));
         } else {
             app_state.set_hint(None);
         }
 
         back_button
     } else if update_available {
-        let quick_update_button = ui.add(Button::new("Quick Update"));
+        let quick_update_button = ui.add(Button::new("快速更新"));
 
         // Initiate update if button clicked
         if quick_update_button.clicked() {
@@ -130,7 +133,7 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
 
         ui.add_space(4.0);
 
-        let full_update_button = ui.add(Button::new("Full Update"));
+        let full_update_button = ui.add(Button::new("完整更新"));
 
         if full_update_button.clicked() {
             // Clear any previous errors
@@ -140,21 +143,21 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
 
         // HINTS
         if quick_update_button.has_focus() {
-            app_state.set_hint(Some("Update MinUI.zip only".to_string()));
+            app_state.set_hint(Some("仅更新 MinUI.zip".to_string()));
         } else if full_update_button.has_focus() {
-            app_state.set_hint(Some("Extract full zip files (base + extras)".to_string()));
+            app_state.set_hint(Some("解压完整压缩包（基础 + 扩展）".to_string()));
         } else {
             app_state.set_hint(None);
         }
 
         quick_update_button
     } else {
-        let force_button = ui.button("Update anyway");
+        let force_button = ui.button("仍要更新");
         if force_button.clicked() {
             app_state.set_nextui_tag(None); // forget the tag
         }
 
-        let quit_button = ui.button("Quit");
+        let quit_button = ui.button("退出");
         if quit_button.clicked() {
             if app_state.release_selection_menu() {
                 app_state.set_release_selection_menu(false);
@@ -165,12 +168,12 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
 
         if quit_button.has_focus() {
             if app_state.release_selection_menu() {
-                app_state.set_hint(Some("Return to Latest Version options".to_string()));
+                app_state.set_hint(Some("返回到最新版本选项".to_string()));
             } else {
-                app_state.set_hint(Some("Quit NextUI Updater".to_string()));
+                app_state.set_hint(Some("退出 NextUI 更新器".to_string()));
             }
         } else if force_button.has_focus() {
-            app_state.set_hint(Some("Ignore current version".to_string()));
+            app_state.set_hint(Some("忽略当前版本".to_string()));
         } else {
             app_state.set_hint(None);
         }
@@ -250,7 +253,7 @@ fn init_sdl() -> Result<(
     // Create a window
     let window = video_subsystem
         .window(
-            &format!("NextUI Updater {}", env!("CARGO_PKG_VERSION")),
+            &format!("NextUI 更新器 {}", env!("CARGO_PKG_VERSION")),
             WINDOW_WIDTH,
             WINDOW_HEIGHT,
         )
@@ -381,17 +384,17 @@ pub fn run_ui(app_state: &'static AppStateManager) -> Result<()> {
                 // Check application state
                 let update_in_progress = app_state.current_operation().is_some();
 
-                let title_prefix = format!("NextUI Updater {}", env!("CARGO_PKG_VERSION"));
+                let title_prefix = format!("NextUI 更新器 {}", env!("CARGO_PKG_VERSION"));
                 if app_state.release_selection_menu() {
                     if app_state.release_selection_confirmed() {
                         ui.label(
-                            RichText::new(title_prefix + " Version Selector")
+                            RichText::new(title_prefix + " 版本选择")
                                 .color(Color32::from_rgb(150, 150, 150))
                                 .size(10.0),
                         );
                     } else {
                         ui.label(
-                            RichText::new(title_prefix + " Version Selector Warning")
+                            RichText::new(title_prefix + " 版本选择警告")
                                 .color(Color32::from_rgb(150, 150, 150))
                                 .size(10.0),
                         );
@@ -480,7 +483,7 @@ pub fn run_ui(app_state: &'static AppStateManager) -> Result<()> {
                             );
 
                             ui.label(
-                                RichText::new("Select Version")
+                                RichText::new("选择版本")
                                     .size(6.0)
                                     .color(Color32::from_rgb(100, 100, 100)),
                             );
@@ -521,7 +524,7 @@ pub fn run_ui(app_state: &'static AppStateManager) -> Result<()> {
                     );
                     ui.label(
                         RichText::new(
-                            "XSelect Version",
+                            "X选择版本",
                         )
                         .size(6.0)
                         .color(Color32::TRANSPARENT)
