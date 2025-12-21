@@ -61,31 +61,22 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
                         );
                     } else {
                         ui.label(
-                            RichText::new(format!(
-                                "当前已是最新版本：\n{selected_tag}"
-                            ))
-                            .size(10.0),
+                            RichText::new(format!("当前已是最新版本：\n{selected_tag}")).size(10.0),
                         );
                     }
                     update_available = false;
                 } else if app_state.release_selection_menu() {
                     // selection view
-                    ui.label(
-                        RichText::new(format!("已选择版本：\n{selected_tag}")).size(10.0),
-                    );
+                    ui.label(RichText::new(format!("已选择版本：\n{selected_tag}")).size(10.0));
                 } else {
-                    ui.label(
-                        RichText::new(format!("发现新版本：\n{selected_tag}")).size(10.0),
-                    );
+                    ui.label(RichText::new(format!("发现新版本：\n{selected_tag}")).size(10.0));
                 }
             }
             (_, _, Some(release)) => {
                 if app_state.release_selection_menu() {
                     // selection view
                     let selected_tag = hint_wrap_nextui_tag(app_state, &release.tag_name);
-                    ui.label(
-                        RichText::new(format!("已选择版本：\n{selected_tag}")).size(10.0),
-                    );
+                    ui.label(RichText::new(format!("已选择版本：\n{selected_tag}")).size(10.0));
                 } else {
                     ui.label(
                         RichText::new(format!("最新版本：\nNextUI {}", release.tag_name))

@@ -113,9 +113,7 @@ pub fn self_update(app_state: &AppStateManager) -> Result<()> {
         return Err("解压更新包失败".into());
     }
 
-    app_state.set_current_operation(Some(
-        "自更新成功！正在重启更新器...".to_string(),
-    ));
+    app_state.set_current_operation(Some("自更新成功！正在重启更新器...".to_string()));
 
     // Give the user a moment to see the completion message
     thread::sleep(std::time::Duration::from_secs(1));
@@ -243,10 +241,7 @@ pub fn update_nextui(app_state: &AppStateManager, full: bool) -> Result<()> {
     let mut release = {
         app_state.start_operation("正在下载更新包...");
 
-        app_state
-            .nextui_release()
-            .clone()
-                .ok_or("未找到可用版本")?
+        app_state.nextui_release().clone().ok_or("未找到可用版本")?
     };
     if app_state.release_selection_menu() {
         let index = app_state.nextui_releases_and_tags_index().unwrap_or(0);
