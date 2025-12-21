@@ -2,39 +2,39 @@
 
 # NextUI OTA Updater PAK
 
-A PAK for updating NextUI on-device (aka OTA), tested on the TrimUI Brick (but might work on the Smart Pro as well). Wifi required (obviously).
+用于在设备端（OTA）更新 NextUI 的 PAK。已在 TrimUI Brick 上测试（Smart Pro 也可能可用）。需要 Wi‑Fi（显然）。
 
-## Installation
+## 安装
 
-Unzip the `nextui-updater-pak.zip` file to the root of your SD card (merge the contents).
+将 `nextui-updater-pak.zip` 解压到 SD 卡根目录（合并/覆盖同名文件即可）。
 
-## Controls
+## 操作说明
 
-- **D-pad Up/Down**: Navigate between buttons
-- **Button A**: Select
-- **Button B**: Go Back/Exit
-- **Button X**: Version Select
+- **方向键 上/下**：在按钮之间移动
+- **A 键**：确认/选择
+- **B 键**：返回/退出
+- **X 键**：版本选择
 
-## Building for tg5040 using [cross-rs](https://github.com/cross-rs/cross)
+## 使用 [cross-rs](https://github.com/cross-rs/cross) 为 tg5040 构建
 
 ```bash
 cross build --release --target=aarch64-unknown-linux-gnu
 ```
 
-The compiled binary will be in `target/aarch64-unknown-linux-gnu/release/nextui-updater-rs`.
+编译产物在 `target/aarch64-unknown-linux-gnu/release/nextui-updater-rs`。
 
-## Building release zip
+## 打包发布 zip
 
 ```bash
 scripts/create_pak.sh
 ```
 
-The zip file will be in `./nextui-updater-pak.zip`.
+生成的 zip 在 `./nextui-updater-pak.zip`。
 
-## License
+## 许可证
 
-This project is open source and available under the MIT License.
+本项目开源，使用 MIT License。
 
-## Contributing
+## 贡献
 
-Many improvements are possible and contributions are welcome! Please feel free to submit a Pull Request.
+欢迎贡献！如果你有任何改进想法，欢迎提交 Pull Request。
