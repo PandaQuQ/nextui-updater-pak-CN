@@ -20,6 +20,64 @@ const DPI_SCALE: f32 = 4.0;
 // On-device Chinese glyph support is provided by .system/res/font2.ttf.
 const FONTS: [&str; 2] = ["BPreplayBold-unhinted.otf", "font2.ttf"];
 
+// Pre-warm glyph cache for on-device rendering.
+// Some GPU/driver/font-atlas combinations only render glyphs that have already been rasterized.
+// Also note: glyph atlases are effectively size-dependent, so we prewarm at multiple sizes.
+const PREWARM_TEXT_ZH: &str = "\
+警告\
+NextUI 并不完全支持降级！\
+旧版本可能导致部分设置丢失或不稳定\
+可能需要手动编辑设置或文件\
+已选择版本：\
+当前已安装此版本！\
+当前已是最新版本：\
+发现新版本：\
+最新版本：\
+暂无版本信息\
+返回\
+我已了解\
+返回到最新版本选项\
+确认警告并打开更新选项\
+快速更新\
+完整更新\
+仅更新 MinUI.zip\
+解压完整压缩包（基础 + 扩展）\
+仍要更新\
+退出\
+退出 NextUI 更新器\
+忽略当前版本\
+选择版本\
+正在检查更新器更新...\
+正在下载更新器...\
+正在解压 NextUI 更新器\
+解压更新包失败\
+自更新成功！正在重启更新器...\
+正在检查 NextUI 更新...\
+正在获取 NextUI Release 列表...\
+获取 Release 失败：\
+未获取到任何 Release\
+正在获取 NextUI Tag 列表...\
+获取 Tag 失败：\
+未获取到任何 Tag\
+最新 Release 找不到对应的 Tag：\
+自更新失败：\
+更新失败：\
+正在下载更新包...\
+未找到可用版本\
+未找到可下载的资源文件\
+正在下载\
+正在解压\
+请稍候...\
+Roms 文件夹\
+已存在，跳过\
+更新完成，准备重启...\
+正在重启系统...\
+GitHub API 请求失败：\
+状态：\
+响应头：\
+下载完成！\
+";
+
 #[allow(clippy::too_many_lines)]
 fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Response {
     let current_version = app_state.current_version();
@@ -560,26 +618,18 @@ pub fn run_ui(app_state: &'static AppStateManager) -> Result<()> {
                         .size(10.0)
                         .color(Color32::TRANSPARENT)
                     );
+
+                    // Main body labels/hints use ~10.0
+                    ui.label(RichText::new(PREWARM_TEXT_ZH).size(10.0).color(Color32::TRANSPARENT));
+
+                    // Buttons often use a larger default size; prewarm those too.
+                    ui.label(RichText::new(PREWARM_TEXT_ZH).size(18.0).color(Color32::TRANSPARENT));
+
+                    // Small indicator glyphs
                     ui.label(
-                        RichText::new(
-                            // Pre-warm glyph cache for on-device rendering.
-                            // Important: egui caches glyphs per font size, so we prewarm at
-                            // the main UI size (10.0) as well as the small indicator size (6.0).
-                            "警告 退出 快速 更新 完整 仍要 返回 我已了解\
-                            当前已是最新版本 已选择版本 发现新版本 暂无版本信息\
-                            返回到最新版本选项 确认警告并打开更新选项 退出NextUI更新器\
-                            忽略当前版本 仅更新MinUI.zip 解压完整压缩包（基础+扩展）\
-                            快速更新 完整更新 仍要更新",
-                        )
-                        .size(10.0)
-                        .color(Color32::TRANSPARENT)
-                    );
-                    ui.label(
-                        RichText::new(
-                            "X选择版本",
-                        )
-                        .size(6.0)
-                        .color(Color32::TRANSPARENT)
+                        RichText::new("X选择版本")
+                            .size(6.0)
+                            .color(Color32::TRANSPARENT),
                     );
                 },
             );
