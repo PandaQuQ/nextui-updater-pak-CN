@@ -563,11 +563,20 @@ pub fn run_ui(app_state: &'static AppStateManager) -> Result<()> {
                     ui.label(
                         RichText::new(
                             // Pre-warm glyph cache for on-device rendering.
-                            // Include all UI strings that may appear later (warnings/buttons/etc).
-                            "X选择版本 警告 退出 快速更新 完整更新 仍要更新 返回 我已了解\
+                            // Important: egui caches glyphs per font size, so we prewarm at
+                            // the main UI size (10.0) as well as the small indicator size (6.0).
+                            "警告 退出 快速 更新 完整 仍要 返回 我已了解\
                             当前已是最新版本 已选择版本 发现新版本 暂无版本信息\
                             返回到最新版本选项 确认警告并打开更新选项 退出NextUI更新器\
-                            忽略当前版本 仅更新MinUI.zip 解压完整压缩包（基础+扩展）",
+                            忽略当前版本 仅更新MinUI.zip 解压完整压缩包（基础+扩展）\
+                            快速更新 完整更新 仍要更新",
+                        )
+                        .size(10.0)
+                        .color(Color32::TRANSPARENT)
+                    );
+                    ui.label(
+                        RichText::new(
+                            "X选择版本",
                         )
                         .size(6.0)
                         .color(Color32::TRANSPARENT)
