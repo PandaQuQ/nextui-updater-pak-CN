@@ -273,38 +273,72 @@ fn load_font() -> Result<FontDefinitions> {
         Ok(settings.contains("font=1").into())
     }
 
-    // Now load the font
-    let mut path = PathBuf::from(SDCARD_ROOT);
-    let preference = get_font_preference().unwrap_or(0);
-    path.push(format!(".system/res/{}", FONTS[preference]));
-
-    let mut font_bytes = vec![];
-    match std::fs::File::open(&path).and_then(|mut f| f.read_to_end(&mut font_bytes)) {
-        Ok(_) => {
-            println!("Loading font: {}", path.display());
+    fn try_load_font_bytes(path: &PathBuf) -> Result<Option<Vec<u8>>> {
+        let mut bytes = vec![];
+        match std::fs::File::open(path).and_then(|mut f| f.read_to_end(&mut bytes)) {
+            Ok(_) => Ok(Some(bytes)),
+            Err(_) => Ok(None),
         }
-        Err(e) => {
-            // Fallback for devices/skins where the preferred font file name differs.
-            println!("Failed to load font {}: {e:?}", path.display());
-            let mut fallback = PathBuf::from(SDCARD_ROOT);
-            fallback.push(".system/res/font2.ttf");
-            println!("Loading fallback font: {}", fallback.display());
-            font_bytes.clear();
-            std::fs::File::open(fallback)?.read_to_end(&mut font_bytes)?;
+    }
+
+    let preference = get_font_preference().unwrap_or(0);
+
+    // Build a fallback list of fonts to maximize glyph coverage on-device.
+    // Order matters: earlier fonts take precedence.
+    let mut font_paths: Vec<PathBuf> = vec![];
+
+    let mut preferred = PathBuf::from(SDCARD_ROOT);
+    preferred.push(format!(".system/res/{}", FONTS[preference]));
+    font_paths.push(preferred);
+
+    // Common CJK-capable font on device
+    let mut font2 = PathBuf::from(SDCARD_ROOT);
+    font2.push(".system/res/font2.ttf");
+    font_paths.push(font2);
+
+    // Load any other fonts in .system/res as additional fallbacks.
+    let mut res_dir = PathBuf::from(SDCARD_ROOT);
+    res_dir.push(".system/res");
+    if let Ok(entries) = std::fs::read_dir(&res_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+                continue;
+            };
+            if !matches!(ext.to_ascii_lowercase().as_str(), "ttf" | "otf") {
+                continue;
+            }
+            font_paths.push(path);
+        }
+    }
+
+    // De-dup while preserving order
+    let mut deduped: Vec<PathBuf> = vec![];
+    for p in font_paths {
+        if !deduped.iter().any(|e| e == &p) {
+            deduped.push(p);
         }
     }
 
     let mut font_data: BTreeMap<String, Arc<FontData>> = BTreeMap::new();
+    let mut family_order: Vec<String> = vec![];
+
+    for (idx, path) in deduped.iter().enumerate() {
+        if let Some(bytes) = try_load_font_bytes(path)? {
+            println!("Loading font: {}", path.display());
+            let key = format!("font_{idx}");
+            family_order.push(key.clone());
+            font_data.insert(key, Arc::new(FontData::from_owned(bytes)));
+        }
+    }
+
+    if family_order.is_empty() {
+        return Err("No usable fonts found in .system/res".into());
+    }
 
     let mut families = BTreeMap::new();
-
-    font_data.insert(
-        "custom_font".to_owned(),
-        std::sync::Arc::new(FontData::from_owned(font_bytes)),
-    );
-
-    families.insert(FontFamily::Proportional, vec!["custom_font".to_owned()]);
-    families.insert(FontFamily::Monospace, vec!["custom_font".to_owned()]);
+    families.insert(FontFamily::Proportional, family_order.clone());
+    families.insert(FontFamily::Monospace, family_order);
 
     Ok(FontDefinitions {
         font_data,
@@ -528,7 +562,12 @@ pub fn run_ui(app_state: &'static AppStateManager) -> Result<()> {
                     );
                     ui.label(
                         RichText::new(
-                            "X选择版本",
+                            // Pre-warm glyph cache for on-device rendering.
+                            // Include all UI strings that may appear later (warnings/buttons/etc).
+                            "X选择版本 警告 退出 快速更新 完整更新 仍要更新 返回 我已了解\
+                            当前已是最新版本 已选择版本 发现新版本 暂无版本信息\
+                            返回到最新版本选项 确认警告并打开更新选项 退出NextUI更新器\
+                            忽略当前版本 仅更新MinUI.zip 解压完整压缩包（基础+扩展）",
                         )
                         .size(6.0)
                         .color(Color32::TRANSPARENT)
