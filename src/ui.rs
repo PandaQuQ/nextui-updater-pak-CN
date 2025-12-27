@@ -273,12 +273,12 @@ fn load_font() -> Result<FontDefinitions> {
         Ok(settings.contains("font=1").into())
     }
 
-    fn try_load_font_bytes(path: &PathBuf) -> Result<Option<Vec<u8>>> {
+    fn try_load_font_bytes(path: &std::path::Path) -> Option<Vec<u8>> {
         let mut bytes = vec![];
-        match std::fs::File::open(path).and_then(|mut f| f.read_to_end(&mut bytes)) {
-            Ok(_) => Ok(Some(bytes)),
-            Err(_) => Ok(None),
-        }
+        std::fs::File::open(path)
+            .and_then(|mut f| f.read_to_end(&mut bytes))
+            .ok()
+            .map(|_| bytes)
     }
 
     let preference = get_font_preference().unwrap_or(0);
@@ -305,7 +305,7 @@ fn load_font() -> Result<FontDefinitions> {
             let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
                 continue;
             };
-            if !matches!(ext.to_ascii_lowercase().as_str(), "ttf" | "otf") {
+            if !(ext.eq_ignore_ascii_case("ttf") || ext.eq_ignore_ascii_case("otf")) {
                 continue;
             }
             font_paths.push(path);
@@ -324,7 +324,7 @@ fn load_font() -> Result<FontDefinitions> {
     let mut family_order: Vec<String> = vec![];
 
     for (idx, path) in deduped.iter().enumerate() {
-        if let Some(bytes) = try_load_font_bytes(path)? {
+        if let Some(bytes) = try_load_font_bytes(path.as_path()) {
             println!("Loading font: {}", path.display());
             let key = format!("font_{idx}");
             family_order.push(key.clone());
