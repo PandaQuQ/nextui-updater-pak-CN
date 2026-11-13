@@ -36,19 +36,6 @@ fn get_client() -> &'static Client {
     })
 }
 
-pub fn fetch_latest_release(repo: &str) -> Result<Release> {
-    let response = get_client()
-        .get(format!("{}/repos/{repo}/releases/latest", api_base()))
-        .header("User-Agent", USER_AGENT)
-        .send()?;
-
-    if !response.status().is_success() {
-        return Err(format!("GitHub API 请求失败：{}", response.status()).into());
-    }
-
-    Ok(response.json()?)
-}
-
 pub fn fetch_releases(repo: &str) -> Result<Vec<Release>> {
     let response = get_client()
         .get(format!("{}/repos/{repo}/releases?per_page=100", api_base()))

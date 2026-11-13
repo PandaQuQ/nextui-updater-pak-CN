@@ -5,14 +5,17 @@ use crate::{
     Result, SDCARD_ROOT,
 };
 use bytes::Bytes;
-use fetching::{download, fetch_latest_release, fetch_releases, fetch_tags};
+use fetching::{download, fetch_releases, fetch_tags};
 use regex::Regex;
 
 use std::{
+    cmp::Ordering,
+    collections::HashSet,
     fs::File,
     io::{Cursor, Read, Write},
     path::PathBuf,
     process::exit,
+    sync::LazyLock,
     thread,
 };
 
@@ -56,10 +59,78 @@ fn extract_zip<T: Fn(&str) -> bool>(
             println!("Extracted file: {}", extracted_file_path.display());
         }
 
-        progress_cb(file_number as f32 / (archive_len - 1) as f32);
+        progress_cb((file_number + 1) as f32 / archive_len as f32);
     }
 
     Ok(())
+}
+
+/// Repository the (Chinese) updater updates itself from.
+const UPDATER_REPO: &str = "PandaQuQ/nextui-updater-pak-CN";
+/// Release asset that contains `Tools/tg5040/Updater.pak/...` (extracted at the SD root).
+/// (`Updater.pak.zip` holds the bare pak folder contents and must not be used here.)
+const UPDATER_ASSET: &str = "nextui-updater-pak.zip";
+
+/// Version of this build: the release tag injected by the release workflow
+/// (`NEXTUI_UPDATER_RELEASE_TAG`, e.g. `v0.5.0-fix3`), otherwise the crate version.
+pub fn installed_updater_version() -> &'static str {
+    match option_env!("NEXTUI_UPDATER_RELEASE_TAG") {
+        Some(tag) if !tag.is_empty() => tag,
+        _ => env!("CARGO_PKG_VERSION"),
+    }
+}
+
+/// Sort key for updater versions like `v0.5.0`, `v0.5.0-fix2`, `v0.6.0-beta1`.
+/// `-fixN` is newer than the plain version, `-alpha/-beta/-rcN` are older.
+/// Returns `None` if the tag has no `X.Y.Z` core.
+fn updater_version_key(tag: &str) -> Option<(semver::Version, u8, u64)> {
+    let tag = tag.trim().trim_start_matches(['v', 'V']);
+    let (core, suffix) = tag.split_once('-').unwrap_or((tag, ""));
+    let core = semver::Version::parse(core).ok()?;
+    let mut rank = 1; // plain release
+    let mut num = 0;
+    for part in suffix.split('-').filter(|p| !p.is_empty()) {
+        let lower = part.to_ascii_lowercase();
+        let digits_at = lower
+            .find(|c: char| c.is_ascii_digit())
+            .unwrap_or(lower.len());
+        let (word, n) = lower.split_at(digits_at);
+        let n = n.parse::<u64>().unwrap_or(0);
+        match word {
+            "fix" | "hotfix" | "patch" => {
+                rank = 2;
+                num = n.max(1);
+            }
+            "alpha" | "beta" | "rc" | "pre" => {
+                rank = 0;
+                num = n;
+            }
+            _ => {} // e.g. "CN"
+        }
+    }
+    Some((core, rank, num))
+}
+
+/// Is `candidate` strictly newer than `installed`? Unparseable tags never are.
+fn is_newer_updater(candidate: &str, installed: &str) -> bool {
+    if candidate.trim() == installed.trim() {
+        return false;
+    }
+    match (
+        updater_version_key(candidate),
+        updater_version_key(installed),
+    ) {
+        (Some(c), Some(i)) => c.cmp(&i) == Ordering::Greater,
+        _ => false,
+    }
+}
+
+/// Newest updater release allowed by the version mode (by version, not date).
+fn pick_updater_release(releases: Vec<Release>, mode: VersionMode) -> Option<Release> {
+    filter_releases(releases, mode)
+        .into_iter()
+        .filter(|r| updater_version_key(&r.tag_name).is_some())
+        .max_by(|a, b| updater_version_key(&a.tag_name).cmp(&updater_version_key(&b.tag_name)))
 }
 
 pub fn self_update(app_state: &AppStateManager) -> Result<()> {
@@ -68,22 +139,39 @@ pub fn self_update(app_state: &AppStateManager) -> Result<()> {
 
     println!("正在检查更新器更新...");
 
-    let release = fetch_latest_release("LanderN/nextui-updater-pak")?;
+    let installed = installed_updater_version();
+    let Some(release) =
+        pick_updater_release(fetch_releases(UPDATER_REPO)?, app_state.version_mode())
+    else {
+        println!("No updater release found in {UPDATER_REPO}");
+        return Ok(());
+    };
 
-    println!("Latest updater release: {release:?}");
+    println!(
+        "Latest updater release: {} (installed: {installed})",
+        release.tag_name
+    );
 
-    let available = semver::Version::parse(&release.tag_name)?;
-    let installed = semver::Version::parse(env!("CARGO_PKG_VERSION"))?;
-
-    if available > installed {
-        println!("New version available: {available} (current: {installed})");
-        app_state.set_current_operation(Some("正在下载更新器...".to_string()));
+    if is_newer_updater(&release.tag_name, installed) {
+        println!(
+            "New version available: {} (current: {installed})",
+            release.tag_name
+        );
     } else {
         println!("No updates available");
         return Ok(());
     }
 
-    let bytes = download(&release.assets[0].url, |pr| {
+    let Some(asset) = release.assets.iter().find(|a| a.name == UPDATER_ASSET) else {
+        println!(
+            "Updater release {} has no {UPDATER_ASSET}",
+            release.tag_name
+        );
+        return Ok(());
+    };
+    app_state.set_current_operation(Some("正在下载更新器...".to_string()));
+
+    let bytes = download(&asset.url, |pr| {
         app_state.update_progress(pr);
     })?;
 
@@ -121,6 +209,42 @@ pub fn self_update(app_state: &AppStateManager) -> Result<()> {
 
     // "5" is the exit code for "restart required"
     exit(5);
+}
+
+static EMU_TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\((?<emu>\w+)\)").expect("Failed to compile regex"));
+
+/// Emulator tags (`GB` for `Game Boy (GB)`) of the Roms folders on the SD card.
+fn existing_emu_tags(roms_dir: &std::path::Path) -> HashSet<String> {
+    let Ok(entries) = std::fs::read_dir(roms_dir) else {
+        return HashSet::new();
+    };
+    entries
+        .filter_map(std::result::Result::ok)
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| {
+            EMU_TAG_RE
+                .captures(&e.file_name().to_string_lossy())
+                .and_then(|c| c.name("emu").map(|m| m.as_str().to_string()))
+        })
+        .collect()
+}
+
+/// Full update filter: skip anything inside a Roms folder whose emulator tag
+/// was already present before the update started.
+fn full_update_filter(file: &str, existing_emu_tags: &HashSet<String>) -> bool {
+    let Some(rest) = file.strip_prefix("Roms/") else {
+        return true;
+    };
+    // Only the top-level folder name under Roms/ decides
+    let folder = rest.split('/').next().unwrap_or_default();
+    match EMU_TAG_RE
+        .captures(folder)
+        .and_then(|c| c.name("emu").map(|m| m.as_str().to_string()))
+    {
+        Some(emu) => !existing_emu_tags.contains(&emu),
+        None => true,
+    }
 }
 
 /// Drop drafts, drop prereleases unless the user opted in, newest first.
@@ -299,34 +423,14 @@ pub fn update_nextui(app_state: &AppStateManager, full: bool) -> Result<()> {
 
     // Extract the update package
     if full {
-        let emu_tag_re = Regex::new(r"\((?<emu>\w+)\)").expect("Failed to compile regex");
-        // Full update, extract all files, except for Roms folders which already exist
+        // Full update, extract all files, except for Roms folders which already
+        // existed *before* this update (folders created by the update itself
+        // must still get their contents).
+        let existing = existing_emu_tags(&PathBuf::from(&*SDCARD_ROOT).join("Roms"));
+        println!("已有的 Roms 模拟器标签：{existing:?}");
         extract_zip(
             bytes,
-            |file| {
-                if file.starts_with("Roms/") {
-                    // Extract the emu tag from the folder name
-                    if let Some(captures) = emu_tag_re.captures(file) {
-                        if let Some(emu) = captures.name("emu").map(|c| c.as_str()) {
-                            // Check if the emu tag already exists in the roms folder
-                            if std::fs::read_dir(PathBuf::from(&*SDCARD_ROOT).join("Roms"))
-                                .is_ok_and(|d| {
-                                    d.filter_map(std::result::Result::ok).any(|e| {
-                                        e.file_name()
-                                            .to_string_lossy()
-                                            .contains(format!("({emu})").as_str())
-                                    })
-                                })
-                            {
-                                println!("Roms 文件夹 {emu} 已存在，跳过");
-                                return false;
-                            }
-                        }
-                    }
-                }
-
-                true
-            },
+            |file| full_update_filter(file, &existing),
             |pr| app_state.update_progress(pr),
         )?;
     } else {
@@ -405,6 +509,80 @@ mod tests {
                 "v6.6.1-CN"
             ]
         );
+    }
+
+    fn urel(tag: &str, prerelease: bool) -> Release {
+        let mut r = rel(tag, prerelease, "2026-01-01T00:00:00Z");
+        r.assets = ["Updater.pak.zip", "nextui-updater-pak.zip"]
+            .iter()
+            .map(|n| crate::github::Asset {
+                name: (*n).to_string(),
+                url: format!("http://x/{n}"),
+            })
+            .collect();
+        r
+    }
+
+    #[test]
+    fn updater_version_ordering() {
+        assert!(is_newer_updater("v0.5.0-fix", "v0.5.0"));
+        assert!(is_newer_updater("v0.5.0-fix2", "v0.5.0-fix"));
+        assert!(is_newer_updater("v0.5.0-fix3", "0.5.0"));
+        assert!(is_newer_updater("v0.6.0", "v0.5.0-fix3"));
+        assert!(is_newer_updater("v0.6.0", "v0.6.0-beta1"));
+        assert!(is_newer_updater("v0.6.0-beta2", "v0.6.0-beta1"));
+        assert!(is_newer_updater("v0.6.0-beta1", "v0.5.0-fix3"));
+        assert!(!is_newer_updater("v0.5.0-fix3", "v0.5.0-fix3"));
+        assert!(!is_newer_updater("v0.5.0", "v0.5.0-fix3"));
+        assert!(!is_newer_updater("0.0.1", "v0.5.0"));
+        assert!(!is_newer_updater("garbage", "v0.5.0"));
+        assert!(!is_newer_updater("v9.9.9", "garbage"));
+    }
+
+    #[test]
+    fn updater_release_respects_version_mode() {
+        let releases = vec![
+            urel("v0.5.0-fix3", false),
+            urel("v0.6.0-beta1", true),
+            urel("v0.5.0-fix2", false),
+        ];
+        let stable = pick_updater_release(releases.clone(), VersionMode::Stable).unwrap();
+        assert_eq!(stable.tag_name, "v0.5.0-fix3");
+        let pre = pick_updater_release(releases, VersionMode::Prerelease).unwrap();
+        assert_eq!(pre.tag_name, "v0.6.0-beta1");
+    }
+
+    #[test]
+    fn full_update_keeps_existing_roms_and_fills_new_ones() {
+        let existing: HashSet<String> = ["GB".to_string()].into();
+        assert!(!full_update_filter("Roms/Game Boy (GB)/", &existing));
+        assert!(!full_update_filter("Roms/Game Boy (GB)/x.txt", &existing));
+        // A user folder with a different name but the same tag is respected too
+        assert!(!full_update_filter("Roms/GB Games (GB)/x.txt", &existing));
+        assert!(full_update_filter("Roms/Sega Genesis (MD)/", &existing));
+        assert!(full_update_filter(
+            "Roms/Sega Genesis (MD)/from_zip.txt",
+            &existing
+        ));
+        assert!(full_update_filter(
+            "Roms/Sega Genesis (MD)/game (GB).md",
+            &existing
+        ));
+        assert!(full_update_filter("Roms/", &existing));
+        assert!(full_update_filter("MinUI.zip", &existing));
+    }
+
+    #[test]
+    fn existing_tags_are_snapshotted_from_disk() {
+        let dir = std::env::temp_dir().join(format!("nui-roms-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("Game Boy (GB)")).unwrap();
+        std::fs::write(dir.join("notes (MD).txt"), "file, not a folder").unwrap();
+        let tags = existing_emu_tags(&dir);
+        // Creating a folder afterwards (as extraction does) must not change the snapshot
+        std::fs::create_dir_all(dir.join("Sega Genesis (MD)")).unwrap();
+        assert_eq!(tags, HashSet::from(["GB".to_string()]));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -1,0 +1,2 @@
+[build.env]
+passthrough = ["NEXTUI_UPDATER_RELEASE_TAG"]

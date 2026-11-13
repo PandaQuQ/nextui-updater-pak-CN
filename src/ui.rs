@@ -353,7 +353,10 @@ fn init_sdl() -> Result<(
     // Create a window
     let window = video_subsystem
         .window(
-            &format!("NextUI 更新器 {}", env!("CARGO_PKG_VERSION")),
+            &format!(
+                "NextUI 更新器 {}",
+                crate::update::installed_updater_version()
+            ),
             WINDOW_WIDTH,
             WINDOW_HEIGHT,
         )
@@ -534,7 +537,7 @@ pub fn run_ui(app_state: &'static AppStateManager) -> Result<()> {
                 // Check application state
                 let update_in_progress = app_state.current_operation().is_some();
 
-                let title_prefix = format!("NextUI 更新器 {}", env!("CARGO_PKG_VERSION"));
+                let title_prefix = format!("NextUI 更新器 {}", crate::update::installed_updater_version());
                 if app_state.release_selection_menu() {
                     if app_state.release_selection_confirmed() {
                         ui.label(
