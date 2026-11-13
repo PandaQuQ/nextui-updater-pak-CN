@@ -8,6 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # CMake 4 removed compatibility with cmake_minimum_required < 3.5 (bundled SDL2 build)
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 jobs:
   formatting:
