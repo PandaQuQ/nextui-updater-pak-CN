@@ -10,6 +10,8 @@ env:
   CARGO_TERM_COLOR: always
   # CMake 4 removed compatibility with cmake_minimum_required < 3.5 (bundled SDL2 build)
   CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+  # GCC 15 defaults to C23, which bundled SDL2 2.26 does not compile with
+  CFLAGS: "-std=gnu17"
 
 jobs:
   formatting:
