@@ -1,2 +1,2 @@
 [build.env]
-passthrough = ["NEXTUI_UPDATER_RELEASE_TAG"]
+passthrough = ["NEXTUI_UPDATER_RELEASE_TAG", "CMAKE_POLICY_VERSION_MINIMUM", "CFLAGS"]

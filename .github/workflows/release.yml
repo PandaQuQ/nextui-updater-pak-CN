@@ -16,6 +16,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # CMake 4 removed compatibility with cmake_minimum_required < 3.5 (bundled SDL2 build)
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+  # GCC 15 defaults to C23, which bundled SDL2 2.26 does not compile with
+  CFLAGS: "-std=gnu17"
 
 jobs:
   build-and-release:
@@ -47,6 +51,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y zip
+
+      # sdl2-sys (bundled) copies libSDL2 into target/.../deps and fails if it does not exist yet
+      - name: Prepare target dir
+        run: mkdir -p target/aarch64-unknown-linux-gnu/release/deps
 
       - name: Build (aarch64-unknown-linux-gnu)
         # The tag is compiled into the binary so self-update can compare versions
