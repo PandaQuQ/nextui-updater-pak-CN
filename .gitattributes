@@ -1,1 +1,4 @@
 *.png filter=lfs diff=lfs merge=lfs -text
+
+# README screenshots should be regular files so they render on GitHub
+doc/*.png -filter -diff -merge binary
