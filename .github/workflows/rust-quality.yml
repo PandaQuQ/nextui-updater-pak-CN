@@ -62,5 +62,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsdl2-dev
 
+      # sdl2-sys (bundled) copies libSDL2 into target/debug/deps and fails if it does not exist yet
+      - name: Prepare target dir
+        run: mkdir -p target/debug/deps
+
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
