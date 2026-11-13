@@ -11,6 +11,18 @@ use crate::Result;
 
 const USER_AGENT: &str = concatcp!("NextUIUpdater/", env!("CARGO_PKG_VERSION"));
 
+// GitHub API base URL. Overridable with NEXTUI_UPDATER_API_BASE so the updater
+// can be tested on desktop against a local mock server.
+fn api_base() -> String {
+    std::env::var("NEXTUI_UPDATER_API_BASE")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map_or_else(
+            || "https://api.github.com".to_string(),
+            |s| s.trim_end_matches('/').to_string(),
+        )
+}
+
 static CLIENT_CELL: OnceLock<Client> = OnceLock::new();
 
 fn get_client() -> &'static Client {
@@ -24,26 +36,9 @@ fn get_client() -> &'static Client {
     })
 }
 
-pub fn fetch_latest_release(repo: &str) -> Result<Release> {
-    let response = get_client()
-        .get(format!(
-            "https://api.github.com/repos/{repo}/releases/latest"
-        ))
-        .header("User-Agent", USER_AGENT)
-        .send()?;
-
-    if !response.status().is_success() {
-        return Err(format!("GitHub API 请求失败：{}", response.status()).into());
-    }
-
-    Ok(response.json()?)
-}
-
 pub fn fetch_releases(repo: &str) -> Result<Vec<Release>> {
     let response = get_client()
-        .get(format!(
-            "https://api.github.com/repos/{repo}/releases?per_page=100"
-        ))
+        .get(format!("{}/repos/{repo}/releases?per_page=100", api_base()))
         .header("User-Agent", USER_AGENT)
         .send()?;
 
@@ -56,9 +51,7 @@ pub fn fetch_releases(repo: &str) -> Result<Vec<Release>> {
 
 pub fn fetch_tags(repo: &str) -> Result<Vec<Tag>> {
     let response = get_client()
-        .get(format!(
-            "https://api.github.com/repos/{repo}/tags?per_page=100"
-        ))
+        .get(format!("{}/repos/{repo}/tags?per_page=100", api_base()))
         .header("User-Agent", USER_AGENT)
         .send()?;
 

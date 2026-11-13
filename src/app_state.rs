@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
+use crate::config::VersionMode;
 use crate::github::{Release, ReleaseAndTag, Tag};
 
 // Application state shared between UI thread and update thread
@@ -20,6 +21,7 @@ pub struct AppState {
     nextui_releases_and_tags_index: Option<usize>,
     release_selection_menu: bool,
     release_selection_confirmed: bool,
+    version_mode: VersionMode,
     current_operation: Option<String>,
     progress: Option<Progress>,
     error: Option<String>,
@@ -48,6 +50,7 @@ impl AppStateManager {
                 nextui_releases_and_tags_index: None,
                 release_selection_menu: false,
                 release_selection_confirmed: false,
+                version_mode: VersionMode::Stable,
                 current_operation: None,
                 progress: None,
                 error: None,
@@ -117,7 +120,15 @@ impl AppStateManager {
         self.state.lock().release_selection_confirmed
     }
 
+    pub fn version_mode(&self) -> VersionMode {
+        self.state.lock().version_mode
+    }
+
     // Setter methods
+    pub fn set_version_mode(&self, mode: VersionMode) {
+        self.state.lock().version_mode = mode;
+    }
+
     pub fn set_submenu(&self, submenu: Submenu) {
         self.state.lock().submenu = submenu;
     }
