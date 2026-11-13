@@ -16,10 +16,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # CMake 4 removed compatibility with cmake_minimum_required < 3.5 (bundled SDL2 build)
+  # Passed into the cross container; the image has older GCC, so do not set CFLAGS=-std=gnu17 here
   CMAKE_POLICY_VERSION_MINIMUM: "3.5"
-  # GCC 15 defaults to C23, which bundled SDL2 2.26 does not compile with
-  CFLAGS: "-std=gnu17"
 
 jobs:
   build-and-release:
