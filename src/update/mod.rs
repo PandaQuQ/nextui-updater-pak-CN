@@ -1,6 +1,7 @@
 use crate::{
     app_state::{AppStateManager, Progress},
-    github::ReleaseAndTag,
+    config::VersionMode,
+    github::{Release, ReleaseAndTag},
     Result, SDCARD_ROOT,
 };
 use bytes::Bytes;
@@ -30,7 +31,7 @@ fn extract_zip<T: Fn(&str) -> bool>(
 
     // Extract the update package
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
-    let target_directory = PathBuf::from(SDCARD_ROOT);
+    let target_directory = PathBuf::from(&*SDCARD_ROOT);
     let archive_len = archive.len();
 
     for file_number in 0..archive_len {
@@ -122,7 +123,31 @@ pub fn self_update(app_state: &AppStateManager) -> Result<()> {
     exit(5);
 }
 
+/// Drop drafts, drop prereleases unless the user opted in, newest first.
+pub fn filter_releases(releases: Vec<Release>, mode: VersionMode) -> Vec<Release> {
+    let mut releases: Vec<Release> = releases
+        .into_iter()
+        .filter(|r| !r.draft && (mode == VersionMode::Prerelease || !r.prerelease))
+        .collect();
+    // GitHub does not strictly order /releases by publish time; keep the
+    // newest published release first so it becomes the default choice.
+    // (stable sort: releases without a date keep their API order at the end)
+    releases.sort_by(|a, b| match (&a.published_at, &b.published_at) {
+        (Some(x), Some(y)) => y.cmp(x),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+    releases
+}
+
 pub fn do_nextui_release_check(app_state: &AppStateManager) {
+    // Forget results of a previous check (e.g. made in another version mode)
+    app_state.set_nextui_release(None);
+    app_state.set_nextui_tag(None);
+    app_state.set_nextui_releases_and_tags(None);
+    app_state.set_nextui_releases_and_tags_index(None);
+
     // Fetch latest release information
     app_state.start_operation("正在检查 NextUI 更新...");
     let repo = "PandaQuQ/NextUI-CN";
@@ -130,7 +155,7 @@ pub fn do_nextui_release_check(app_state: &AppStateManager) {
     // Fetch latest releases information
     app_state.start_operation("正在获取 NextUI Release 列表...");
     let latest_releases = match fetch_releases(repo) {
-        Ok(releases) => releases,
+        Ok(releases) => filter_releases(releases, app_state.version_mode()),
         Err(err) => {
             // Failed connection
             println!("Releases fetch failed: {:?}", err.source());
@@ -139,9 +164,12 @@ pub fn do_nextui_release_check(app_state: &AppStateManager) {
         }
     };
     if latest_releases.is_empty() {
-        // Connected, but no results
+        // Connected, but no results (or none left after the version-mode filter)
         println!("Releases fetch returned 0 releases");
-        app_state.set_operation_failed("未获取到任何 Release");
+        app_state.set_operation_failed(match app_state.version_mode() {
+            VersionMode::Stable => "未获取到任何稳定版 Release",
+            VersionMode::Prerelease => "未获取到任何 Release",
+        });
         return;
     }
 
@@ -246,7 +274,11 @@ pub fn update_nextui(app_state: &AppStateManager, full: bool) -> Result<()> {
     if app_state.release_selection_menu() {
         let index = app_state.nextui_releases_and_tags_index().unwrap_or(0);
         let relase_and_tag_vector = app_state.nextui_releases_and_tags().unwrap_or_default();
-        release = relase_and_tag_vector[index].release.clone();
+        release = relase_and_tag_vector
+            .get(index)
+            .ok_or("未找到可用版本")?
+            .release
+            .clone();
     }
 
     let assets = release.assets;
@@ -277,15 +309,14 @@ pub fn update_nextui(app_state: &AppStateManager, full: bool) -> Result<()> {
                     if let Some(captures) = emu_tag_re.captures(file) {
                         if let Some(emu) = captures.name("emu").map(|c| c.as_str()) {
                             // Check if the emu tag already exists in the roms folder
-                            if std::fs::read_dir(PathBuf::from(SDCARD_ROOT).join("Roms"))
-                                .map(|d| {
+                            if std::fs::read_dir(PathBuf::from(&*SDCARD_ROOT).join("Roms"))
+                                .is_ok_and(|d| {
                                     d.filter_map(std::result::Result::ok).any(|e| {
                                         e.file_name()
                                             .to_string_lossy()
                                             .contains(format!("({emu})").as_str())
                                     })
                                 })
-                                .unwrap_or(false)
                             {
                                 println!("Roms 文件夹 {emu} 已存在，跳过");
                                 return false;
@@ -325,5 +356,62 @@ pub fn update_nextui(app_state: &AppStateManager, full: bool) -> Result<()> {
     match std::process::Command::new("reboot").output() {
         Ok(_) => Ok(()),
         Err(e) => Err(Box::new(e)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rel(tag: &str, prerelease: bool, published_at: &str) -> Release {
+        Release {
+            tag_name: tag.to_string(),
+            assets: vec![],
+            prerelease,
+            draft: false,
+            published_at: Some(published_at.to_string()),
+        }
+    }
+
+    // GitHub's API order for NextUI-CN at the time of writing
+    fn sample() -> Vec<Release> {
+        vec![
+            rel("v6.15.0-CN-fix1", false, "2026-11-13T10:11:52Z"),
+            rel("v6.15.0-CN", false, "2026-11-13T01:26:49Z"),
+            rel("v6.15.0-CN-beta1", true, "2026-11-13T11:38:59Z"),
+            rel("v6.6.1-CN", false, "2026-02-27T17:41:41Z"),
+        ]
+    }
+
+    fn tags(v: &[Release]) -> Vec<&str> {
+        v.iter().map(|r| r.tag_name.as_str()).collect()
+    }
+
+    #[test]
+    fn stable_mode_skips_prereleases() {
+        let r = filter_releases(sample(), VersionMode::Stable);
+        assert_eq!(tags(&r), ["v6.15.0-CN-fix1", "v6.15.0-CN", "v6.6.1-CN"]);
+    }
+
+    #[test]
+    fn prerelease_mode_includes_them_newest_first() {
+        let r = filter_releases(sample(), VersionMode::Prerelease);
+        assert_eq!(
+            tags(&r),
+            [
+                "v6.15.0-CN-beta1",
+                "v6.15.0-CN-fix1",
+                "v6.15.0-CN",
+                "v6.6.1-CN"
+            ]
+        );
+    }
+
+    #[test]
+    fn drafts_are_always_skipped() {
+        let mut v = sample();
+        v[0].draft = true;
+        let r = filter_releases(v, VersionMode::Prerelease);
+        assert!(!tags(&r).contains(&"v6.15.0-CN-fix1"));
     }
 }

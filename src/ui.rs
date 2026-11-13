@@ -1,5 +1,6 @@
 use crate::app_state::{AppStateManager, Progress, Submenu};
-use crate::update::do_update;
+use crate::config::{save_version_mode, VersionMode};
+use crate::update::{do_nextui_release_check, do_update};
 use egui::{Button, Color32, FullOutput, ProgressBar};
 use egui_backend::egui;
 use egui_backend::{sdl2::event::Event, DpiScaling, ShaderVersion};
@@ -76,7 +77,16 @@ GitHub API 请求失败：\
 状态：\
 响应头：\
 下载完成！\
+版本模式：稳定版预发布版\
+「预发布」\
+仅检查稳定版本\
+包含预发布（测试）版本\
+未获取到任何稳定版 Release\
+保存设置失败：\
 ";
+
+// Prerelease marker shown next to a version
+const PRERELEASE_MARK: &str = "「预发布」";
 
 #[allow(clippy::too_many_lines)]
 fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Response {
@@ -93,6 +103,7 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
         latest_release = release_and_tag.as_ref().map(|r| r.release.clone());
         latest_tag = release_and_tag.map(|r| r.tag.clone());
     }
+    let is_prerelease = latest_release.as_ref().is_some_and(|r| r.prerelease);
 
     if app_state.release_selection_menu() & !app_state.release_selection_confirmed() {
         ui.add_space(16.0);
@@ -109,7 +120,7 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
         // Show release information if available
         match (current_version, latest_tag, latest_release) {
             (Some(current_version), Some(tag), _) => {
-                let selected_tag = hint_wrap_nextui_tag(app_state, &tag.name);
+                let selected_tag = hint_wrap_nextui_tag(app_state, &tag.name, is_prerelease);
                 if tag.commit.sha.starts_with(&current_version) && !latest_discarded {
                     if app_state.release_selection_menu() {
                         // selection view
@@ -135,12 +146,17 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
             (_, _, Some(release)) => {
                 if app_state.release_selection_menu() {
                     // selection view
-                    let selected_tag = hint_wrap_nextui_tag(app_state, &release.tag_name);
+                    let selected_tag =
+                        hint_wrap_nextui_tag(app_state, &release.tag_name, is_prerelease);
                     ui.label(RichText::new(format!("已选择版本：\n{selected_tag}")).size(10.0));
                 } else {
                     ui.label(
-                        RichText::new(format!("最新版本：\nNextUI {}", release.tag_name))
-                            .size(10.0),
+                        RichText::new(format!(
+                            "最新版本：\nNextUI {}{}",
+                            release.tag_name,
+                            if is_prerelease { PRERELEASE_MARK } else { "" }
+                        ))
+                        .size(10.0),
                     );
                 }
             }
@@ -152,7 +168,8 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
 
     ui.add_space(8.0);
 
-    if app_state.release_selection_menu() & !app_state.release_selection_confirmed() {
+    let response = if app_state.release_selection_menu() & !app_state.release_selection_confirmed()
+    {
         let back_button = ui.button("返回");
         if back_button.clicked() {
             app_state.set_release_selection_menu(false);
@@ -230,7 +247,39 @@ fn nextui_ui(ui: &mut egui::Ui, app_state: &'static AppStateManager) -> egui::Re
         }
 
         quit_button
+    };
+
+    // NextUI-CN: version mode (stable only / include prereleases)
+    if app_state.release_selection_menu() {
+        return response;
     }
+    ui.add_space(8.0);
+    let mode = app_state.version_mode();
+    let mode_button = ui.add(Button::new(
+        RichText::new(format!("版本模式：{}", mode.label())).size(10.0),
+    ));
+    if mode_button.clicked() {
+        let new_mode = mode.toggled();
+        app_state.set_version_mode(new_mode);
+        app_state.set_error(None);
+        if let Err(err) = save_version_mode(new_mode) {
+            println!("Saving version mode failed: {err:?}");
+            app_state.set_error(Some(format!("保存设置失败：{err}")));
+        }
+        // re-run the release check with the new filter
+        std::thread::spawn(move || do_nextui_release_check(app_state));
+    }
+    if mode_button.has_focus() {
+        app_state.set_hint(Some(
+            match mode {
+                VersionMode::Stable => "仅检查稳定版本",
+                VersionMode::Prerelease => "包含预发布（测试）版本",
+            }
+            .to_string(),
+        ));
+    }
+
+    response
 }
 
 // Map controller buttons to keyboard keys
@@ -345,17 +394,17 @@ fn load_font() -> Result<FontDefinitions> {
     // Order matters: earlier fonts take precedence.
     let mut font_paths: Vec<PathBuf> = vec![];
 
-    let mut preferred = PathBuf::from(SDCARD_ROOT);
+    let mut preferred = PathBuf::from(&*SDCARD_ROOT);
     preferred.push(format!(".system/res/{}", FONTS[preference]));
     font_paths.push(preferred);
 
     // Common CJK-capable font on device
-    let mut font2 = PathBuf::from(SDCARD_ROOT);
+    let mut font2 = PathBuf::from(&*SDCARD_ROOT);
     font2.push(".system/res/font2.ttf");
     font_paths.push(font2);
 
     // Load any other fonts in .system/res as additional fallbacks.
-    let mut res_dir = PathBuf::from(SDCARD_ROOT);
+    let mut res_dir = PathBuf::from(&*SDCARD_ROOT);
     res_dir.push(".system/res");
     if let Ok(entries) = std::fs::read_dir(&res_dir) {
         for entry in entries.flatten() {
@@ -404,8 +453,13 @@ fn load_font() -> Result<FontDefinitions> {
     })
 }
 
-fn hint_wrap_nextui_tag(app_state: &'static AppStateManager, tag_name: &str) -> String {
-    let mut selected_tag = format!("NextUI {tag_name}");
+fn hint_wrap_nextui_tag(
+    app_state: &'static AppStateManager,
+    tag_name: &str,
+    prerelease: bool,
+) -> String {
+    let mark = if prerelease { PRERELEASE_MARK } else { "" };
+    let mut selected_tag = format!("NextUI {tag_name}{mark}");
     if !app_state.release_selection_menu() {
         return selected_tag;
     }
@@ -424,7 +478,7 @@ fn is_most_left_index(app_state: &'static AppStateManager) -> bool {
         .nextui_releases_and_tags()
         .unwrap_or_default()
         .len();
-    index >= max_index - 1
+    index >= max_index.saturating_sub(1)
 }
 
 fn is_most_right_index(app_state: &'static AppStateManager) -> bool {
@@ -568,7 +622,7 @@ pub fn run_ui(app_state: &'static AppStateManager) -> Result<()> {
                                 rect.center(),
                                 button_size / 2.0,
                                 Color32::from_rgb(60, 60, 60),
-                                egui::Stroke::new(1.0, Color32::from_rgb(100, 100, 100)),
+                                egui::Stroke::new(1.0_f32, Color32::from_rgb(100, 100, 100)),
                             );
                             ui.painter().text(
                                 rect.center(),
@@ -624,7 +678,6 @@ pub fn run_ui(app_state: &'static AppStateManager) -> Result<()> {
 
                     // Buttons often use a larger default size; prewarm those too.
                     ui.label(RichText::new(PREWARM_TEXT_ZH).size(18.0).color(Color32::TRANSPARENT));
-
                     // Small indicator glyphs
                     ui.label(
                         RichText::new("X选择版本")
@@ -725,7 +778,8 @@ pub fn run_ui(app_state: &'static AppStateManager) -> Result<()> {
                     Some(sdl2::keyboard::Keycode::X) => app_state.set_release_selection_menu(true),
                     Some(sdl2::keyboard::Keycode::Left) => handle_version_navigation(app_state, -1),
                     Some(sdl2::keyboard::Keycode::Right) => handle_version_navigation(app_state, 1),
-                    _ => {}
+                    // let egui see the rest (Up/Down focus, Enter to activate)
+                    _ => egui_state.process_input(&window, event, &mut painter),
                 },
                 _ => {
                     // Process other input events

@@ -15,6 +15,24 @@
 - **B 键**：返回/退出
 - **X 键**：版本选择
 
+## 版本模式
+
+主界面最下方的「版本模式」按钮可以在两种模式之间切换（默认稳定版）：
+
+- **稳定版**：只检查/列出正式发布的版本，跳过 GitHub 上标记为预发布（prerelease）的版本。
+- **预发布版**：同时列出预发布（测试）版本，版本号后会标注「预发布」，并默认选中最新发布的版本。
+
+设置保存在 SD 卡 `.userdata/shared/nextui-updater.txt`（`version_mode=stable` 或 `version_mode=prerelease`），重启后仍然生效。
+
+## 在电脑上测试（开发用）
+
+桌面构建（`cargo build`）可直接在 Linux 下运行，键盘 上/下/回车/X/Esc/左/右 对应手柄按键。两个环境变量便于测试：
+
+- `NEXTUI_SDCARD_ROOT`：模拟的 SD 卡根目录（默认 `/mnt/SDCARD/`）
+- `NEXTUI_UPDATER_API_BASE`：GitHub API 地址（默认 `https://api.github.com`），可指向本地模拟服务器
+
+注意：更新完成后会执行 `reboot`，测试时请在 `PATH` 里放一个假的 `reboot` 脚本。
+
 ## 使用 [cross-rs](https://github.com/cross-rs/cross) 为 tg5040 构建
 
 ```bash
