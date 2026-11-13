@@ -12,6 +12,7 @@ use update::{do_nextui_release_check, do_self_update};
 
 mod app_state;
 mod config;
+mod font;
 mod github;
 mod ui;
 mod update;

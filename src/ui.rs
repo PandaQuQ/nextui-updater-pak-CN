@@ -17,9 +17,6 @@ use crate::{Result, SDCARD_ROOT};
 const WINDOW_WIDTH: u32 = 1024;
 const WINDOW_HEIGHT: u32 = 768;
 const DPI_SCALE: f32 = 4.0;
-// MinUI font selection (from minuisettings.txt): font=0/1
-// On-device Chinese glyph support is provided by .system/res/font2.ttf.
-const FONTS: [&str; 2] = ["BPreplayBold-unhinted.otf", "font2.ttf"];
 
 // Pre-warm glyph cache for on-device rendering.
 // Some GPU/driver/font-atlas combinations only render glyphs that have already been rasterized.
@@ -371,40 +368,40 @@ fn init_sdl() -> Result<(
 
 // Load font from file
 fn load_font() -> Result<FontDefinitions> {
-    fn get_font_preference() -> Result<usize> {
-        // Load NextUI settings
-        let mut settings_file =
-            std::fs::File::open(SDCARD_ROOT.to_owned() + ".userdata/shared/minuisettings.txt")?;
-
-        let mut settings = String::new();
-        settings_file.read_to_string(&mut settings)?;
-
-        // Very crappy parser
-        Ok(settings.contains("font=1").into())
-    }
-
-    fn try_load_font_bytes(path: &std::path::Path) -> Option<Vec<u8>> {
+    fn read_font(path: &std::path::Path) -> Option<Vec<u8>> {
         let mut bytes = vec![];
         std::fs::File::open(path)
             .and_then(|mut f| f.read_to_end(&mut bytes))
-            .ok()
-            .map(|_| bytes)
+            .ok()?;
+        if crate::font::is_usable_font(&bytes) {
+            Some(bytes)
+        } else {
+            println!("Font is not usable, skipping: {}", path.display());
+            None
+        }
     }
 
-    let preference = get_font_preference().unwrap_or(0);
+    let sd_root = PathBuf::from(&*SDCARD_ROOT);
+
+    // Font selected in NextUI settings (built-in or custom:<file> from /Fonts)
+    let settings = std::fs::read_to_string(sd_root.join(".userdata/shared/minuisettings.txt"))
+        .unwrap_or_default();
+    let selected = crate::font::selected_font_file(&settings);
+    println!("NextUI font setting: {selected}");
 
     // Build a fallback list of fonts to maximize glyph coverage on-device.
-    // Order matters: earlier fonts take precedence.
+    // Order matters: earlier fonts take precedence (per glyph), so a custom
+    // font without CJK glyphs still gets them from the bundled fonts.
     let mut font_paths: Vec<PathBuf> = vec![];
+    match crate::font::resolve_font_path(&sd_root, &selected) {
+        Some(path) => font_paths.push(path),
+        None => println!("Invalid font setting {selected:?}, using default"),
+    }
 
-    let mut preferred = PathBuf::from(&*SDCARD_ROOT);
-    preferred.push(format!(".system/res/{}", FONTS[preference]));
-    font_paths.push(preferred);
-
-    // Common CJK-capable font on device
-    let mut font2 = PathBuf::from(&*SDCARD_ROOT);
-    font2.push(".system/res/font2.ttf");
-    font_paths.push(font2);
+    // Default NextUI-CN font, then the other bundled CJK-capable fonts
+    for name in [crate::font::DEFAULT_FONT_FILE, "font2.ttf", "font3.ttf"] {
+        font_paths.push(sd_root.join(".system/res").join(name));
+    }
 
     // Load any other fonts in .system/res as additional fallbacks.
     let mut res_dir = PathBuf::from(&*SDCARD_ROOT);
@@ -434,7 +431,7 @@ fn load_font() -> Result<FontDefinitions> {
     let mut family_order: Vec<String> = vec![];
 
     for (idx, path) in deduped.iter().enumerate() {
-        if let Some(bytes) = try_load_font_bytes(path.as_path()) {
+        if let Some(bytes) = read_font(path.as_path()) {
             println!("Loading font: {}", path.display());
             let key = format!("font_{idx}");
             family_order.push(key.clone());

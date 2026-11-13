@@ -24,6 +24,15 @@
 
 设置保存在 SD 卡 `.userdata/shared/nextui-updater.txt`（`version_mode=stable` 或 `version_mode=prerelease`），重启后仍然生效。
 
+## 字体
+
+更新器使用 NextUI 系统设置里选择的字体（读取 `.userdata/shared/minuisettings.txt` 的 `font=`）：
+
+- 内置字体：`font1.ttf` 梦源黑体（默认）、`font2.ttf` 缝合像素、`font3.ttf` 寒蝉半圆体（兼容旧的数字 id 和 `fontOrder`）
+- 自定义字体：`font=custom:<文件名>`，从 SD 卡根目录 `Fonts/` 读取
+
+字体不存在或无法加载时自动回退到默认字体；自定义字体缺少的字（如中文）会由内置字体补上。
+
 ## 在电脑上测试（开发用）
 
 桌面构建（`cargo build`）可直接在 Linux 下运行，键盘 上/下/回车/X/Esc/左/右 对应手柄按键。两个环境变量便于测试：
